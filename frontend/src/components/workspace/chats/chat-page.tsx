@@ -329,6 +329,9 @@ export default function ChatPage() {
             <main className="flex min-h-0 max-w-full grow flex-col">
               <div className="flex min-h-0 flex-1 justify-center">
                 <MessageList
+                  archiveDownloadsEnabled={
+                    isNewThread || isMock || threadMetadata.data != null
+                  }
                   className={cn("size-full", !isWelcomeMode && "pt-10")}
                   testId="main-message-list"
                   threadId={threadId}
