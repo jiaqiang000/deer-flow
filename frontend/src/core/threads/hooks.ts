@@ -4,6 +4,7 @@ import { useStream } from "@langchain/langgraph-sdk/react";
 import {
   type QueryClient,
   type InfiniteData,
+  type QueryFilters,
   useInfiniteQuery,
   useMutation,
   useQuery,
@@ -1809,47 +1810,10 @@ export function useThreadStream({
       );
       for (const update of updates) {
         if (update && "title" in update && update.title) {
-          void queryClient.setQueriesData(
-            {
-              queryKey: ["threads", "search"],
-              exact: false,
-            },
-            (oldData: Array<AgentThread> | undefined) => {
-              return oldData?.map((t) => {
-                if (t.thread_id === threadIdRef.current) {
-                  return {
-                    ...t,
-                    values: {
-                      ...t.values,
-                      title: update.title,
-                    },
-                  };
-                }
-                return t;
-              });
-            },
-          );
-          const nextTitle: string = update.title;
-          void queryClient.setQueriesData(
-            {
-              queryKey: INFINITE_THREADS_QUERY_KEY_PREFIX,
-              exact: false,
-            },
-            (oldData: InfiniteData<AgentThread[]> | undefined) =>
-              mapInfiniteThreadsCache(
-                oldData,
-                (t): AgentThread =>
-                  t.thread_id === threadIdRef.current
-                    ? {
-                        ...t,
-                        values: {
-                          ...t.values,
-                          title: nextTitle,
-                        },
-                      }
-                    : t,
-              ),
-          );
+          const currentThreadId = threadIdRef.current;
+          if (currentThreadId) {
+            setThreadTitleInCaches(queryClient, currentThreadId, update.title);
+          }
         }
       }
     },
@@ -2922,46 +2886,82 @@ function mergeThreadMetadata(
   };
 }
 
-function setThreadMetadataInCaches(
-  queryClient: QueryClient,
-  threadId: string,
-  metadata: ThreadMetadataPatch,
-) {
-  queryClient.setQueriesData(
-    {
+function mergeThreadTitle(thread: AgentThread, title: string): AgentThread {
+  return {
+    ...thread,
+    values: {
+      ...thread.values,
+      title,
+    },
+  };
+}
+
+function getThreadSnapshotCacheFilters(threadId: string) {
+  return {
+    search: {
       queryKey: ["threads", "search"],
       exact: false,
     },
+    infiniteSearch: {
+      queryKey: INFINITE_THREADS_QUERY_KEY_PREFIX,
+      exact: false,
+    },
+    metadata: {
+      queryKey: ["thread", "metadata", threadId],
+      exact: false,
+    },
+  } as const;
+}
+
+function setThreadInCaches(
+  queryClient: QueryClient,
+  threadId: string,
+  mapper: (thread: AgentThread) => AgentThread,
+): void {
+  const filters = getThreadSnapshotCacheFilters(threadId);
+
+  queryClient.setQueriesData(
+    filters.search,
     (oldData: Array<AgentThread> | undefined) => {
       if (!oldData) {
         return oldData;
       }
       return oldData.map((thread) =>
-        thread.thread_id === threadId
-          ? mergeThreadMetadata(thread, metadata)
-          : thread,
+        thread.thread_id === threadId ? mapper(thread) : thread,
       );
     },
   );
   queryClient.setQueriesData(
-    {
-      queryKey: INFINITE_THREADS_QUERY_KEY_PREFIX,
-      exact: false,
-    },
+    filters.infiniteSearch,
     (oldData: InfiniteData<AgentThread[]> | undefined) =>
       mapInfiniteThreadsCache(oldData, (thread) =>
-        thread.thread_id === threadId
-          ? mergeThreadMetadata(thread, metadata)
-          : thread,
+        thread.thread_id === threadId ? mapper(thread) : thread,
       ),
   );
   queryClient.setQueriesData(
-    {
-      queryKey: ["thread", "metadata", threadId],
-      exact: false,
-    },
+    filters.metadata,
     (oldData: AgentThread | null | undefined) =>
-      oldData ? mergeThreadMetadata(oldData, metadata) : oldData,
+      oldData ? mapper(oldData) : oldData,
+  );
+}
+
+function setThreadMetadataInCaches(
+  queryClient: QueryClient,
+  threadId: string,
+  metadata: ThreadMetadataPatch,
+) {
+  setThreadInCaches(queryClient, threadId, (thread) =>
+    mergeThreadMetadata(thread, metadata),
+  );
+}
+
+export function setThreadTitleInCaches(
+  queryClient: QueryClient,
+  threadId: string,
+  title: string,
+): void {
+  setThreadInCaches(queryClient, threadId, (thread) =>
+    mergeThreadTitle(thread, title),
   );
 }
 
@@ -3320,45 +3320,19 @@ export function useRenameThread() {
         values: { title },
       });
     },
-    onSuccess(_, { threadId, title }) {
-      queryClient.setQueriesData(
-        {
-          queryKey: ["threads", "search"],
-          exact: false,
-        },
-        (oldData: Array<AgentThread>) => {
-          return oldData.map((t) => {
-            if (t.thread_id === threadId) {
-              return {
-                ...t,
-                values: {
-                  ...t.values,
-                  title,
-                },
-              };
-            }
-            return t;
-          });
-        },
+    async onSuccess(_, { threadId, title }) {
+      const filters: QueryFilters[] = Object.values(
+        getThreadSnapshotCacheFilters(threadId),
       );
-      queryClient.setQueriesData(
-        {
-          queryKey: INFINITE_THREADS_QUERY_KEY_PREFIX,
-          exact: false,
-        },
-        (oldData: InfiniteData<AgentThread[]> | undefined) =>
-          mapInfiniteThreadsCache(oldData, (t) =>
-            t.thread_id === threadId
-              ? {
-                  ...t,
-                  values: {
-                    ...t.values,
-                    title,
-                  },
-                }
-              : t,
-          ),
+
+      // Prevent pre-rename snapshot requests from restoring the stale title.
+      await Promise.all(
+        filters.map((filter) => queryClient.cancelQueries(filter)),
       );
+      setThreadTitleInCaches(queryClient, threadId, title);
+      for (const filter of filters) {
+        void queryClient.invalidateQueries(filter);
+      }
     },
   });
 }
