@@ -814,8 +814,10 @@ finalization) keep the existing completion-data behavior: they receive the
 zero-delivery receipt but do not overwrite RunStore completion fields with an
 empty snapshot.
 
-The same run event history records loop-detection decisions and deferred MCP
-tool promotions for both the lead agent and ordinary task subagents. Promotion
+When `tool_progress.enabled` is true, the same run event history also records
+result-quality guard phase changes. It records loop-detection decisions and
+deferred MCP tool promotions for both the lead agent and ordinary task
+subagents. Promotion
 events identify newly promoted deferred-tool names and whether routing metadata or
 `tool_search` selected them, without copying the search query, routing keywords,
 schemas, arguments, results, or catalog hash into the promotion event itself.
@@ -1492,8 +1494,9 @@ Gateway API callers can opt into `read_conversation` and submit a
 pages of the current visible text of those owned conversations. Read permission
 expires with the run, and text in old messages does not grant access. Text the
 agent has already read stays in the destination conversation after access
-expires or the source is deleted. When a message is truncated, the agent is told
-to ask for the missing part before claiming it has covered every requirement.
+expires or the source is deleted. A message too long for one read carries a
+continuation, so the agent can read the rest; it asks for the missing part only
+if that read is unavailable.
 This API-only feature adds no frontend selector or automatic history search. See
 [configuration](backend/docs/CONFIGURATION.md#reading-referenced-conversations)
 and the [request contract](backend/docs/API.md#referencing-a-previous-conversation).
