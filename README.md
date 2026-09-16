@@ -1133,7 +1133,22 @@ libraries they import.
 
 DeerFlow allocates a task-scoped extension store only for middleware, lifecycle, or
 system-model observation. Services receive app-scoped runtime dependencies after Gateway
-persistence is ready and stop in reverse order after active runs drain. Extension HTTP
+persistence is ready and stop in reverse order after active runs drain. The optional
+`ExtensionRuntimeDeps.run_evidence_reader` is a stable, read-only interface for audit,
+evaluation, synchronization, and observability services: it discovers changed runs with an
+opaque resumable cursor, pages a known run's persisted events with `after_seq`, and reads the
+authoritative run status separately from event evidence. A database-backed run store keeps
+the discovery cursor valid across Gateway restarts; the memory run store provides the same
+ordering only for the current process lifetime. Event metadata is secret-redacted at this
+boundary, but event content is returned unchanged. Both payloads are detached snapshots,
+so modifying nested values cannot change the host's stored evidence. The production
+Gateway supplies an
+app-scoped, cross-user reader to trusted operator extensions; an embedded host may bind the
+same adapter to one user. Changed-run pages contain creations and changes to retained rows,
+not deletion tombstones; consumers that reconcile deletions must poll status for known runs
+and treat a missing result as absent. Extensions still execute with Gateway privileges and
+retain the legacy `session_factory`, so the reader is an API-stability and
+least-accidental-privilege boundary, not a sandbox for untrusted Python packages. Extension HTTP
 routers are mounted after every host route; definite shadows and routes entering the
 host's authentication- or CSRF-exempt paths are rejected with attributed diagnostics,
 while unrelated routers continue to load. Because the host's public paths are a reserved
@@ -1530,7 +1545,10 @@ continuation, so the agent can read the rest; it asks for the missing part only
 if that read is unavailable.
 SDK clients that cannot add top-level request fields may send the same list as
 `context.conversation_references`, and `GET /api/features` reports whether the
-tool is enabled. There is no frontend selector or automatic history search. See
+tool is enabled. When it is, the web composer shows a "Reference a conversation"
+button next to the attachment button: pick up to three of your recent
+conversations, and they are attached to the next message only, shown as chips
+in the composer and in the transcript. There is no automatic history search. See
 [configuration](backend/docs/CONFIGURATION.md#reading-referenced-conversations)
 and the [request contract](backend/docs/API.md#referencing-a-previous-conversation).
 
