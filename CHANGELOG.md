@@ -952,7 +952,9 @@ This release closes that milestone with **765 merged pull requests**.
   upgrade and no-ops on healthy shapes. `RunChangeClockRow` and
   `UserPreferenceRow` are also registered in the ORM model registry so
   `create_all` and autogenerate see every table through explicit imports
-  instead of module side effects.
+  instead of module side effects. Rolling back the repair to
+  `0024_project_documents` intentionally leaves the ancestor-owned schema and
+  existing change positions intact; the repair downgrade is a no-op.
 - **nginx:** Extend the 600-second read timeout to the two remaining locations
   whose routes wait on the Gateway, both left on nginx's 60-second default by
   the thread-route fix. Behind the `/api/` catch-all, the stateless
@@ -2770,6 +2772,13 @@ This release closes that milestone with **765 merged pull requests**.
 
 ### Security
 
+- **uploads:** Deleting an upload no longer follows a symlink to delete a
+  different file. A symlink planted in the sandbox-writable uploads directory
+  made `DELETE /api/threads/{id}/uploads/{filename}` (and
+  `DeerFlowClient.delete_upload`) remove the upload it pointed to, plus that
+  file's companion `.md`, while reporting the requested name as deleted.
+  Symlinks now return 404, matching the upload listing; links that leave the
+  uploads directory are still rejected with 400. ([#5547])
 - **frontend:** Tool steps no longer turn non-web URLs into links. The
   `web_fetch` URL and `web_search` / `image_search` result links in the
   chain-of-thought panel skipped the scheme allowlist that markdown links use,
@@ -4290,3 +4299,4 @@ with **180 merged pull requests** since the first 2.0 milestone tag.
 [#5505]: https://github.com/bytedance/deer-flow/pull/5505
 [#5524]: https://github.com/bytedance/deer-flow/pull/5524
 [#5526]: https://github.com/bytedance/deer-flow/pull/5526
+[#5547]: https://github.com/bytedance/deer-flow/pull/5547
