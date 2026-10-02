@@ -121,6 +121,9 @@ Optional per-model [`request_admission`](backend/docs/CONFIGURATION.md#model-req
 paces requests to help stay within provider request-per-minute limits.
 It is disabled by default; see the linked guide to enable it.
 
+For Google's official Gemini OpenAI-compatible endpoint, use the
+[Gemini reasoning profile](backend/docs/CONFIGURATION.md#gemini-via-googles-openai-compatible-endpoint).
+
 1. **Clone the DeerFlow repository**
 
    ```bash
@@ -141,6 +144,8 @@ It is disabled by default; see the linked guide to enable it.
    The wizard also lets you configure an optional web search provider, or skip it for now.
 
    Jina, Browserless, and InfoQuest web fetches resolve relative links and image sources using the requested page URL (or a usable HTML base URL), so returned Markdown includes complete destinations. Link resolution preserves the surrounding HTML source, including malformed-page formatting.
+
+   Jina fetches support opt-in bounded retries via `max_retries` (default `0`) and `retry_budget_seconds` (default `30`) in the tool configuration. Retry waits are randomized within the time budget. Retries may increase upstream requests and cost; see [Jina fetch retries](backend/docs/CONFIGURATION.md#jina-fetch-retries).
 
    Run `make doctor` at any time to verify your setup and get actionable fix hints.
    If you are opening a GitHub issue about a local setup or runtime problem, run
@@ -1893,13 +1898,17 @@ failing the upload; hidden staging files are left for the startup sweep.
 
 Uploaded filenames matching `.upload-*.part` are rejected because that pattern is
 reserved for temporary staging files. Rename such a file before uploading it.
+The restriction includes Windows aliases with trailing dots or spaces and
+case variants, such as `.upload-notes.part.`, `.upload-notes.part `, and
+`.UPLOAD-NOTES.PART`, on every host.
 The HTTP check recognizes both `/` and `\` as path separators, including on
 Linux, when extracting the basename. The endpoint returns `400` with a rename
 hint before publishing any file in a batch containing a reserved name, so the
 chat reports the upload error instead
 of continuing without the attachment. The SDK validates filenames for the whole
-batch before copying any files. Project document names follow the same
-restriction; an older shelf document with a reserved name
+batch before copying any files. New project document names follow the same
+restriction, whether defaulted from the source or explicitly supplied on upload
+or promotion to the shelf; an older shelf document with a reserved name
 remains downloadable but cannot be attached directly. Download it, rename it,
 and upload it to the thread. This change does not recover or migrate older
 thread uploads that already match the staging pattern.
@@ -2240,6 +2249,7 @@ Current MVP capabilities:
 - One-time task forms reject local times skipped by daylight-saving transitions; select another time before creating or saving the task.
 - Choose whether each scheduled task reuses a thread and its conversation history or creates a fresh thread per run
 - Pin each task to `lead_agent` (default) or a custom agent the owner already has; unknown names are rejected
+- Sending `assistant_id: null` in a scheduled-task PATCH resets the task to `lead_agent`; omitting `assistant_id` preserves the current agent, including when that custom agent has since been deleted
 - Duplicate an existing task into the create form as an editable draft without copying its run history
 - Support `once`, `cron`, and `interval` schedules
 - Editing or duplicating an interval task preserves its saved cadence until the interval is explicitly changed, including sub-minute intervals allowed by the operator's scheduler configuration
