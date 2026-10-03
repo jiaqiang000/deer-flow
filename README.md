@@ -344,6 +344,23 @@ For Google's official Gemini OpenAI-compatible endpoint, use the
 
    </details>
 
+For an explicit backend dotenv file, export `DEER_FLOW_ENV_FILE` before startup,
+alongside `DEER_FLOW_CONFIG_PATH` if needed. For example, from `backend/`:
+
+```bash
+DEER_FLOW_ENV_FILE=/srv/deer-flow/stage.env DEER_FLOW_CONFIG_PATH=/srv/deer-flow/stage.yaml make gateway
+```
+
+Relative dotenv paths use the backend process working directory; absolute paths
+work regardless of that directory. Existing process variables win. An unset
+selector preserves default dotenv discovery; a specified empty, missing,
+non-file or unreadable path fails startup. Explicit selection also fails when
+`PYTHON_DOTENV_DISABLED` disables dotenv loading. Restart after changing the file.
+This selects backend dotenv input only: shell launchers, Docker Compose and the
+frontend retain their own environment loading. Values they already export win.
+It does not select `ENV` profiles or isolate databases, storage or tenants.
+See [backend dotenv selection](backend/docs/CONFIGURATION.md#backend-dotenv-selection).
+
 ### Running the Application
 
 #### Deployment Sizing
@@ -801,7 +818,7 @@ channels:
     bot_token: $TELEGRAM_BOT_TOKEN
     # Optional: render final Markdown replies as Telegram Rich Messages.
     rich_messages: false
-    allowed_users: []               # empty = allow all
+    allowed_users: []               # numeric user IDs, not @usernames; empty = allow all
 
   wechat:
     enabled: false
@@ -1285,6 +1302,14 @@ These are deployment settings; the model still supplies only `query` and optiona
 `time_range`. Omitted filters preserve the existing SDK request; an explicit
 empty list is forwarded and imposes no restriction of that kind. See the
 [tool configuration example](backend/docs/CONFIGURATION.md#tools).
+
+Serper `web_search` supports deployment-level `include_domains` and
+`exclude_domains` too. It checks returned URL hosts (including subdomains), with
+exclusion taking precedence. Filters can return fewer results, including zero;
+there are no refill requests. This selects sources, not factual accuracy or a
+global URL-access policy. The model arguments and image search are unchanged.
+See [Serper configuration](backend/docs/CONFIGURATION.md#serper-source-filters)
+for validation and query-length limits.
 
 When using Tavily for `web_fetch`, extracted pages without a title use their URL
 as the heading; their content remains available to the agent.
