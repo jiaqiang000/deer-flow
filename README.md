@@ -453,6 +453,11 @@ For lightweight single-process event persistence, `run_events.backend: jsonl`
 keeps Unicode message content intact, including line and paragraph separators.
 Existing valid JSONL records remain readable without rewriting the files.
 
+For per-call usage audits, an immediate LLM response replay with populated usage
+updates both nested usage and top-level token counters, even if initial usage was absent or zero.
+The original request, model, and status metadata stay intact; flushed events are
+not rewritten. See the [run event contract](contracts/run_event_stream_contract.json).
+
 The unified nginx endpoint is same-origin by default and does not emit browser CORS headers. If you run a split-origin or port-forwarded browser client, set `GATEWAY_CORS_ORIGINS` to comma-separated exact origins such as `http://localhost:3000`; the Gateway then applies the CORS allowlist and matching CSRF origin checks.
 
 When fine-grained authorization is enabled, Live Browser connections require `threads:write` as well as ownership of the thread, even when only viewing frames: the same connection can control the browser. Permission checks run when connecting. Restart Gateway after upgrading to disconnect sessions admitted by older code.
@@ -1279,6 +1284,8 @@ If a trusted operator manages the configured skills directory through an externa
 
 Skill installs and agent-managed skill edits run through **SkillScan**, a native deterministic safety scanner before the LLM-based skill scanner. Phase 1 runs offline with no Semgrep/OpenGrep dependency, blocks high-confidence `CRITICAL` findings such as private keys or shell execution, and passes warning findings to the LLM scanner for contextual review. Code files (anything under `scripts/`, a script suffix such as `.py`, `.sh`, or `.js`, or an extensionless file starting with `#!`) that are not NUL-free UTF-8 text raise a warning and are still analyzed over a lossy decode, so a single stray byte cannot hide them from `CRITICAL` checks. The moderation adapter normalizes both plain-text model responses and LangChain Responses API text blocks before parsing the required JSON decision. Python instance-client exfiltration checks follow a minimal same-scope evidence chain: a simple name bound to a known client constructor, optional name-to-name aliases, and an actual outbound method or context-manager use supported by that constructor. Constructor roots must be proven imports; bare canonical-looking names are not inferred as modules. Nested scopes do not inherit client handles and inherit only constructor import aliases that are never rebound in the enclosing scope. Comprehensions, walrus-bearing statements, annotations, complex binding targets, unsupported operations, and ambiguous branch flows produce no finding from this signal; skipped constructs conservatively invalidate every name they may bind so stale client state cannot create a finding. A deterministic work budget or recursion limit reached by this best-effort analysis does not discard findings already collected for the file. Set `skill_scan.enabled: false` in `config.yaml` to disable only the deterministic analyzers; safe archive extraction and the LLM scanner still run.
 
+For Python credential mappings, SkillScan checks literal values while treating ordinary dictionary keys as labels. A mapping such as `tokens = {"access_token": os.getenv("ACCESS_TOKEN")}` does not report a hardcoded credential. Keys matching a recognized cloud or API token format are still checked as embedded credentials.
+
 DeerFlow also ships with **skill-reviewer**, a public skill for read-only skill quality review. It uses the built-in `review_skill_package` tool to inspect installed skills, local packages, archives, or pasted `SKILL.md` content without activating the target skill, binding its secrets, executing its scripts, or installing it. The tool returns a compact, tag-neutralized JSON payload to the model context and keeps the full raw review payload in the tool artifact for programmatic consumers. The deterministic review core reuses DeerFlow parsing and SkillScan facts, emits versioned JSON contracts under `contracts/skill_review/`, and can be run from the backend CLI:
 
 ```bash
@@ -1900,8 +1907,8 @@ AIO directory listings discard missing shell sessions so the next request can re
 After a dropped connection, directory listings and persistent shell commands report an
 unknown outcome without replaying the operation; later calls use a fresh session.
 
-Uploaded Markdown outlines recognize ATX heading syntax, clean closing markers with a linear suffix scan, and skip fenced code examples, so hashtags and code comments do not
-crowd out real document sections from the agent's heading preview.
+Uploaded Markdown outlines recognize ATX heading syntax, clean closing markers with a linear suffix scan, and skip fenced and indented code examples, so hashtags and code comments do not
+crowd out real document sections from the agent's heading preview. Indented bold examples are also excluded; PDF-style bold headings with up to three leading spaces remain supported.
 UTF-8 Markdown files with or without a byte-order mark (BOM) produce the same
 outlines and fallback previews, with original line numbers preserved.
 Outline titles are limited to 200 characters and fallback previews to 2,000
@@ -1940,8 +1947,12 @@ If the sample cuts a CRLF line ending in half, the preview keeps the earlier com
 Text artifacts are streamed with HTTP byte-range support. The Web UI initially
 loads at most 1 MiB, shows the preview size when a file is larger, and waits for
 an explicit **Load full file** action before fetching the remainder or mounting
-the full code editor. Active HTML, XHTML, and SVG artifacts remain forced
-downloads at the Gateway boundary.
+the full code editor. Editing becomes available once the complete file has loaded;
+unsaved-change detection uses the full content, including when reverting edits
+or deleting the portion beyond the initial preview. If a reload fails or returns
+only a preview, users can still exit editing while retaining their unsaved draft.
+Active HTML, XHTML, and SVG artifacts remain forced downloads at the Gateway
+boundary.
 
 Artifact previews and downloads preserve literal percent sequences in file names:
 `report%20final.md` and `report final.md` remain distinct files. Markdown links
