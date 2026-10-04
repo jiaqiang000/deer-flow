@@ -1516,6 +1516,10 @@ authenticated backend operations and model tools through the
 one package with persistent user data, its own sidebar page and a read-only search tool.
 Reopening a bookmark resolves the conversation's current agent through the host, so
 custom-agent conversations retain their original chat entry point, including older bookmarks.
+The independent [Agent teams example](examples/deerflow-extension-agent-teams/README.md)
+lets full Custom Agents collaborate through native `@` mentions, shared messages and
+asynchronous peer requests, with a separate team page and persistent member conversations.
+Capability Center lists the example with localized installation information even before it is installed.
 Installation and activation remain deployment-controlled; Capability Center shows plugin
 information and status. Browser code runs as trusted same-origin code.
 The browser API and inline `BrowserModule.code` transport are experimental. The
@@ -1709,6 +1713,8 @@ Compaction keeps the current user request and summarizes older assistant/tool ac
 Use `/compact` in the Web UI composer to summarize older context for the current thread. DeerFlow keeps the full chat visible, but future model calls use the compacted summary plus recent messages. The command is ignored when there is not enough history to compact, and it is blocked while the thread has a run in flight, including when that run is owned by another Gateway worker. If a multi-worker reservation loses its lease, DeerFlow cancels the checkpoint writer before the replacing run proceeds and returns a retryable conflict after cleanup. Thread-title edits are serialized through the same state-write boundary and show a conflict without closing the rename dialog when a run is active.
 
 The chat header also shows a context-window gauge when the selected model has a positive `context_window` configured. It estimates the latest materialized checkpoint's message tokens and keeps the previous same-thread percentage visible while data refetches, independently of the cumulative token-usage setting.
+
+When `token_budget.enabled` and `token_usage.enabled` are both enabled, each lead-agent run budget includes completed subagent usage, including the final batch. Hidden goal continuations share the budget; a new user run starts fresh.
 
 ### Sub-Agents
 
@@ -1937,6 +1943,9 @@ then provides the new revision for saving; an older preview still requires a rel
 Regular files over the 2 MiB editing limit use file identity and change metadata
 for range validators without hashing the whole file. Conditional byte ranges for
 regular files require a matching ETag; date-form `If-Range` requests receive the full current file.
+Saving also bounds the existing-file read to 2 MiB plus one detection byte, so a
+file that grows or is replaced after the size check is rejected without loading
+the entire oversized file into memory.
 
 CSV and TSV artifacts open as tables in the artifact panel and in a separate window. The preview preserves text values (including leading zeros), supports an optional header row, and pages through up to 200 rows and 50 columns from the initial sample. Long or multiline cells can be opened and copied in full. Switch to source to inspect or edit the file; downloads and separate windows use the saved version.
 
@@ -2039,7 +2048,7 @@ uv sync --extra browser
 uv run playwright install chromium
 ```
 
-Then uncomment the `group: browser` tool entries in `config.yaml` (`browser_navigate`, `browser_snapshot`, `browser_click`, `browser_type`, `browser_get_text`, `browser_back`, `browser_screenshot`, `browser_close`). `make dev` / Docker startup detects an enabled `browser_navigate` tool and preserves the `browser` extra on dependency syncs. The Gateway fails startup if browser control is configured but Playwright is missing, and `/api/features` hides the Browser UI unless the backend can actually serve it. Keep `headless: true` and `allow_private_addresses: false` for anything but local, trusted debugging. Attaching to an existing Chrome with `cdp_url` cannot enforce DeerFlow's subresource/redirect SSRF guard and therefore fails closed unless `allow_unguarded_cdp: true` explicitly acknowledges that risk; use it only with a trusted local browser. Browser sessions are process-local; keep `GATEWAY_WORKERS=1` while this tool group is enabled because ordinary uvicorn worker dispatch does not provide thread affinity.
+Then uncomment the `group: browser` tool entries in `config.yaml` (`browser_navigate`, `browser_snapshot`, `browser_click`, `browser_type`, `browser_get_text`, `browser_back`, `browser_screenshot`, `browser_close`). `make dev` / Docker startup detects an enabled `browser_navigate` tool and preserves the `browser` extra on dependency syncs. The Gateway fails startup if browser control is configured but Playwright is missing, and `/api/features` hides the Browser UI unless the backend can actually serve it. Keep `headless: true` and `allow_private_addresses: false` for anything but local, trusted debugging. Attaching to an existing Chrome with `cdp_url` cannot enforce DeerFlow's subresource/redirect SSRF guard and therefore fails closed unless `allow_unguarded_cdp: true` explicitly acknowledges that risk; use it only with a trusted local browser. Browser sessions are process-local; keep the Gateway to a single worker process while this tool group is enabled because ordinary uvicorn worker dispatch does not provide thread affinity. That means `GATEWAY_WORKERS=1`, and on the launches that pass uvicorn no worker count at all (`backend/Dockerfile`, `scripts/serve.sh`) also `WEB_CONCURRENCY` unset or `1`, since uvicorn takes the process count from it.
 
 Existing, non-mock Custom Agent chats expose the same Browser Live controls when browser control is available and the agent either leaves `tool_groups` unrestricted or includes the `browser` group. An explicit tool-group allowlist without `browser` keeps those controls hidden.
 
@@ -2479,9 +2488,20 @@ Headless `--print` and `--json` exit with status `1` when the run fails, includi
 
 A keyboard-driven chat surface with a streaming transcript (Markdown-rendered answers), compact tool-activity cards, a `/` slash-command palette, display-only `/clear`, `/goal` goal management, `/model` and `/threads` pickers, input history, PageUp/PageDown transcript navigation, and `Esc` / `Ctrl+C` interrupt. The composer preserves line breaks and indentation in pasted code, stack traces, and multi-paragraph prompts; `Enter` sends the complete document. Transcript refreshes preserve your reading position after you scroll upward and resume following new output when you return to the bottom. `/clear` removes rows from the current terminal display without deleting the thread or its persisted conversation; `/new` and `/clear` ask you to wait during an active run instead of resetting in-flight display state. Sessions opened in the TUI also appear in the Web UI sidebar — it writes the shared thread store under the local default user, so terminal and web stay in sync **without running the Gateway**.
 
+During an active run, `/resume`, `/threads`, and `/switch` ask you to wait before
+switching conversations. An invalid `/resume` reference displays an error without
+closing the TUI or changing the current conversation.
+After an interrupt and conversation switch, late stream actions from the previous
+thread cannot change the new conversation's display or run state.
+
 At the last composer row, `Down` leaves an unsent draft untouched unless you are
 browsing input history; after recalling history, it moves forward to restore your
 saved draft.
+
+At the first composer row, `Up` also leaves the draft, cursor, and undo history
+untouched when no input history is available.
+Recalling identical history text or a saved draft also preserves the cursor and
+undo history.
 
 See [backend/docs/TUI.md](backend/docs/TUI.md) for the full guide.
 
